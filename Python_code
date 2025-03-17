@@ -1,0 +1,123 @@
+
+///////// Code for timelaps animation for Brahmaputra river entry Bangladesh ////////////
+
+/// using GEE python API ////
+
+//// code adapted from Dr. Qiusheng Wu /////
+
+
+
+
+import os
+import ee
+import geemap
+from geemap import cartoee
+import matplotlib.pyplot as plt
+
+# Initialize the Earth Engine module
+try:
+    ee.Initialize()
+except Exception as e:
+    ee.Authenticate()
+    ee.Initialize()
+
+# Create a map
+Map = geemap.Map()
+
+# Define coordinates for region of interest Brahmaputra river entry border
+lon, lat = 89.71, 25.73
+
+
+# Define time range
+start_year, end_year = 1990, 2011
+
+# Define the point geometry
+point = ee.Geometry.Point(lon, lat)
+years = ee.List.sequence(start_year, end_year)
+
+def get_best_image(year):
+    """Retrieve the best Landsat 5 image for a given year based on cloud cover."""
+    start_date = ee.Date.fromYMD(year, 1, 1)
+    end_date = ee.Date.fromYMD(year, 12, 31)
+    image = (
+        ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")
+        .filterBounds(point)
+        .filterDate(start_date, end_date)
+        .sort("CLOUD_COVER")
+        .first()
+    )
+    return ee.Image(image)
+
+# Create an ImageCollection
+collection = ee.ImageCollection(years.map(get_best_image))
+
+# Define visualization parameters
+vis_params = {"bands": ['B7', 'B5', 'B4'], "min": 0, "max": 5000}
+
+# Display the first image
+first_image = ee.Image(collection.first())
+Map.addLayer(first_image, vis_params, 'First Image')
+Map.setCenter(lon, lat, 13)
+
+# Retrieve and print metadata of the first and last image
+first_image_id = first_image.getInfo()['id']
+sorted_collection = collection.sort("system:time_start", False)
+last_image = sorted_collection.first()
+last_image_id = last_image.getInfo()['id']
+
+print("First Image ID:", first_image_id)
+print("Last Image ID:", last_image_id)
+
+# Define visualization region
+w, h = 0.3, 0.3
+region = [lon + w, lat - h, lon - w, lat + h]
+
+# Plot the image with cartoee
+fig = plt.figure(figsize=(12, 10))
+ax = cartoee.get_map(first_image, region=region, vis_params=vis_params)
+cartoee.add_gridlines(ax, interval=[0.2, 0.2], linestyle=":")
+
+# Add north arrow
+north_arrow_dict = {
+    "text": "N", "xy": (0.1, 0.3), "arrow_length": 0.15,
+    "text_color": "white", "arrow_color": "white", "fontsize": 20,
+    "width": 5, "headwidth": 15, "ha": "center", "va": "center"
+}
+cartoee.add_north_arrow(ax, **north_arrow_dict)
+
+# Add scale bar
+scale_bar_dict = {
+    "length": 10, "xy": (0.1, 0.05), "linewidth": 3,
+    "fontsize": 15, "color": "white", "unit": "km",
+    "ha": "center", "va": "bottom"
+}
+cartoee.add_scale_bar_lite(ax, **scale_bar_dict)
+
+ax.set_title(label='Sundarban', fontsize=16)
+plt.show()
+
+# Generate a time-lapse GIF
+output_dir = os.path.expanduser("~/Downloads/timelapse_Brahmaputra")
+os.makedirs(output_dir, exist_ok=True)
+
+timelapse_path = os.path.join(output_dir, "animation.gif")
+cartoee.get_image_collection_gif(
+    ee_ic=collection,
+    out_dir=output_dir,
+    out_gif=timelapse_path,
+    vis_params=vis_params,
+    region=region,
+    fps=2,
+    mp4=True,
+    grid_interval=(0.2, 0.2),
+    plot_title="Brahmamputra Entry to BD",
+    date_format='YYYY-MM-dd',
+    fig_size=(10, 8),
+    dpi_plot=300,
+    file_format="png",
+    north_arrow_dict=north_arrow_dict,
+    scale_bar_dict=scale_bar_dict,
+    verbose=True,
+)
+
+print(f"GIF saved to {timelapse_path}")
